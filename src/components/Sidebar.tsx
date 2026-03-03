@@ -11,7 +11,7 @@ export default async function Sidebar() {
         <aside className="w-64 flex flex-col h-full bg-gray-dark-900 border-r border-gray-dark-700 text-gray-400 font-sans">
             {/* Header / Logo */}
             <div className="p-6 pb-2">
-                <Link href="/library" className="flex items-baseline gap-2 group">
+                <Link href="/gallery" className="flex items-baseline gap-2 group">
                     <div className="text-xl font-bold tracking-tight text-white group-hover:text-brand-500 transition-colors">
                         ShowMiro
                     </div>
@@ -25,21 +25,17 @@ export default async function Sidebar() {
             <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-hide">
 
                 <div className="space-y-1">
-                    <Link href="/library" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg text-white bg-gray-dark-800 border border-gray-dark-700 transition-colors group">
+                    <Link href="/gallery" className="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg text-white bg-gray-dark-800 border border-gray-dark-700 transition-colors group">
                         <Home className="w-4 h-4 text-brand-600" />
-                        Inspiration
+                        Inspiration Gallery
                     </Link>
-                    <Link href="/library/search" className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-400 rounded-lg hover:bg-gray-dark-800 hover:text-white transition-colors group">
+                    <Link href="/gallery" className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-400 rounded-lg hover:bg-gray-dark-800 hover:text-white transition-colors group">
                         <Search className="w-4 h-4 group-hover:text-brand-600 transition-colors" />
                         Search
                     </Link>
-                    <Link href="/library/private" className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-400 rounded-lg hover:bg-gray-dark-800 hover:text-white transition-colors group">
+                    <Link href="/profile" className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-400 rounded-lg hover:bg-gray-dark-800 hover:text-white transition-colors group">
                         <FolderClosed className="w-4 h-4 group-hover:text-brand-600 transition-colors" />
                         My Library
-                    </Link>
-                    <Link href="/library/history" className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-400 rounded-lg hover:bg-gray-dark-800 hover:text-white transition-colors group">
-                        <Clock className="w-4 h-4 group-hover:text-brand-600 transition-colors" />
-                        History
                     </Link>
                 </div>
 
@@ -57,16 +53,12 @@ export default async function Sidebar() {
                             <span className="text-xs text-gray-600">▼</span>
                         </button>
                         <div className="pl-10 pr-3 py-1 space-y-1">
-                            {['All', 'Product', 'Photograph', 'Food', 'Girl', '3D'].map((tag) => (
-                                <Link key={tag} href={`/library?tag=${tag.toLowerCase()}`} className="block py-1 text-sm text-gray-400 hover:text-white hover:text-brand-400 transition-colors">
+                            {['All', 'Photography', 'UI UX', 'Cyberpunk', 'Cinematic', '3D'].map((tag) => (
+                                <Link key={tag} href={`/gallery?tag=${tag.toLowerCase()}`} className="block py-1 text-sm text-gray-400 hover:text-white hover:text-brand-400 transition-colors">
                                     {tag}
                                 </Link>
                             ))}
                         </div>
-                        <Link href="/library/updates" className="flex items-center gap-3 px-3 py-1.5 mt-2 text-sm text-gray-400 hover:text-white hover:bg-gray-dark-800 rounded-md transition-colors group">
-                            <Clock className="w-4 h-4 text-gray-500 group-hover:text-brand-600 transition-colors" />
-                            Recent Updates
-                        </Link>
                     </div>
                 </div>
 

@@ -16,7 +16,7 @@ export default async function LoginPage(props: Props) {
                 <div className="relative z-10 bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 p-8 rounded-2xl shadow-2xl">
                     <div className="mb-8 text-center">
                         <h1 className="text-4xl font-extrabold tracking-tight mb-2 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">ShowMiro</h1>
-                        <p className="text-neutral-400">Sign in to your visual workspace</p>
+                        <p className="text-neutral-400">Sign in to your visual gallery</p>
                     </div>
 
                     <form className="flex flex-col gap-5" action={login}>

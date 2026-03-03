@@ -56,11 +56,6 @@ export default function FullScreenPromptInspector({ template, imageUrl, onClose 
         catch { return url; }
     };
 
-    // Calculate grid columns strictly for collapse reflow
-    const gridCols = isPanelCollapsed
-        ? 'grid-cols-1 lg:grid-cols-[1fr_0px]'
-        : 'grid-cols-1 lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_460px] 2xl:grid-cols-[1fr_500px]';
-
     return (
         <div
             className="fixed inset-0 z-50 h-[100dvh] w-screen flex items-center justify-center animate-in fade-in duration-300 pointer-events-auto"
@@ -76,11 +71,11 @@ export default function FullScreenPromptInspector({ template, imageUrl, onClose 
                 <div className="absolute inset-y-0 left-0 w-2/3 bg-gradient-to-r from-black/20 to-transparent pointer-events-none" />
             </div>
 
-            {/* Layout Grid */}
-            <div className={`relative w-full h-full grid ${gridCols} transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-none`}>
+            {/* Layout Flex Container */}
+            <div className="relative w-full h-full flex overflow-hidden pointer-events-none">
 
                 {/* LEFT: Media Stage */}
-                <div className={`relative flex flex-col items-center justify-center p-4 lg:p-8 xl:p-12 h-full overflow-hidden transition-all duration-500 pointer-events-auto ${isPanelCollapsed ? 'w-full' : ''}`}>
+                <div className="relative flex flex-col items-center justify-center p-4 lg:p-8 xl:p-12 h-full transition-all duration-500 pointer-events-auto flex-1">
 
                     {/* Top Right Actions (Download & Close) attached to Media Stage */}
                     <div className="absolute top-6 right-6 lg:top-8 lg:right-8 flex items-center gap-2 lg:gap-3 z-30">
@@ -108,17 +103,16 @@ export default function FullScreenPromptInspector({ template, imageUrl, onClose 
 
                         {/* Thumbnail Rail */}
                         {mockVariations.length > 1 && (
-                            <div className="flex flex-col gap-2.5 py-4 max-h-full overflow-y-auto scrollbar-hide shrink-0 z-20 items-center justify-start w-16 lg:w-20">
+                            <div className="flex flex-col gap-3 py-4 max-h-[85vh] overflow-y-auto scrollbar-hide shrink-0 z-20 items-center justify-start w-20 px-2 lg:w-24">
                                 {mockVariations.map((v, i) => (
                                     <button
                                         key={i}
                                         onClick={() => setActiveIndex(i)}
-                                        className={`relative w-16 h-16 lg:w-20 lg:h-20 rounded-xl overflow-hidden shrink-0 transition-all ${activeIndex === i ? 'ring-2 ring-white shadow-[0_0_20px_rgba(255,255,255,0.2)] scale-[1.03] z-10' : 'ring-1 ring-white/10 opacity-50 hover:opacity-100 hover:scale-[1.01]'}`}
+                                        className={`relative flex items-center justify-center w-16 h-16 lg:w-20 lg:h-20 rounded-xl overflow-hidden shrink-0 transition-all bg-black/40 ${activeIndex === i ? 'ring-2 ring-brand-500 ring-offset-2 ring-offset-transparent shadow-[0_0_20px_rgba(255,255,255,0.2)] scale-105 z-10' : 'ring-1 ring-white/10 opacity-60 hover:opacity-100 hover:scale-[1.01]'}`}
                                         aria-label={`View variation ${i + 1}`}
                                         aria-selected={activeIndex === i}
                                     >
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img src={v} alt={`Variation ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                                        <img src={v} alt={`Variation ${i + 1}`} className="w-full h-full object-cover rounded-lg" loading="lazy" />
                                     </button>
                                 ))}
                             </div>
@@ -166,10 +160,9 @@ export default function FullScreenPromptInspector({ template, imageUrl, onClose 
                 </div>
 
                 {/* RIGHT: Inspector Panel */}
-                {/* We use `hidden lg:block` to hide it completely on mobile. For layout collapse, we handle width natively using the grid-cols above. */}
-                <div className={`relative h-full hidden lg:block z-40 transition-opacity duration-500 pointer-events-none ${isPanelCollapsed ? 'opacity-0' : 'opacity-100'}`}>
-                    {/* The internal panel with overflow-hidden */}
-                    <div className="flex flex-col w-full h-full bg-gray-dark-900/95 overflow-hidden shadow-[-20px_0_60px_rgba(0,0,0,0.6)] border-l border-white/5 pointer-events-auto">
+                <div className={`relative h-full flex-shrink-0 z-[55] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-none hidden lg:block ${isPanelCollapsed ? 'w-0' : 'w-[380px] lg:w-[420px] xl:w-[460px] 2xl:w-[500px]'}`}>
+                    {/* The internal panel with fixed widths so it doesn't squish during transition */}
+                    <div className={`absolute top-0 right-0 h-full flex flex-col w-[380px] lg:w-[420px] xl:w-[460px] 2xl:w-[500px] bg-gray-dark-900/95 shadow-[-20px_0_60px_rgba(0,0,0,0.6)] border-l border-white/5 pointer-events-auto transition-transform duration-500 ${isPanelCollapsed ? 'translate-x-[110%]' : 'translate-x-0'}`}>
 
                         {/* The Header Area (Clean Rows) */}
                         <div className="flex flex-col p-6 pb-5 border-b border-white/5 gap-4 shrink-0 bg-gray-950/40">
@@ -253,61 +246,29 @@ export default function FullScreenPromptInspector({ template, imageUrl, onClose 
                             </div>
 
                             {/* PREMIUM SETTINGS UI */}
-                            <div className="flex flex-col gap-3 mb-4">
-                                <h4 className="text-[11px] font-black text-gray-500 uppercase tracking-[0.2em] ml-1 mb-1">Configuration</h4>
 
-                                <div className="bg-gray-900 border border-white/5 rounded-2xl overflow-hidden shadow-sm">
-                                    {/* Group: Base Layer */}
-                                    <div className="p-4 px-5 border-b border-white/5 flex flex-col gap-4 bg-gray-800/20">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500/80">Base Model</span>
-                                            <span className="text-sm font-semibold text-white">Midjourney v6.0</span>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500/80">Aspect Ratio</span>
-                                            <div className="px-2 py-0.5 bg-gray-800 rounded-md text-xs font-bold text-gray-200 border border-white/5 shadow-sm">16:9</div>
-                                        </div>
-                                    </div>
-
-                                    {/* Group: Quality & Variables */}
-                                    <div className="p-4 px-5 flex flex-col gap-4">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500/80">Quality</span>
-                                            <span className="text-xs font-semibold text-brand-300 bg-brand-500/10 px-2 py-0.5 rounded border border-brand-500/20">High (.q 2)</span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500/80">Stylize</span>
-                                            <span className="text-[13px] font-mono font-medium text-gray-300">250</span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500/80">Chaos</span>
-                                            <span className="text-[13px] font-mono font-medium text-gray-300">10</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
 
                         </div>
 
                         {/* Bottom Sticky Action Bar */}
-                        <div className="p-5 bg-gray-950/90 border-t border-white/5 flex gap-3 shrink-0 backdrop-blur-xl">
-                            <button className="flex-1 flex items-center justify-center py-3.5 bg-white hover:bg-gray-100 text-gray-950 rounded-xl font-bold shadow-lg transition-transform hover:-translate-y-0.5 text-sm">
+                        <div className="p-5 flex-col xl:flex-row bg-gray-950/90 border-t border-white/5 flex gap-3 shrink-0 backdrop-blur-xl">
+                            <button className="flex-1 flex items-center justify-center px-2 py-3.5 bg-white hover:bg-gray-100 text-gray-950 rounded-xl font-bold shadow-lg transition-transform hover:-translate-y-0.5 text-[13px] whitespace-nowrap">
                                 Remix Prompt
                             </button>
-                            <button className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-gray-800 hover:bg-gray-700 text-white rounded-xl font-bold border border-white/5 shadow-lg transition-transform hover:-translate-y-0.5 text-sm">
-                                <Copy className="w-4 h-4 text-gray-400" />
+                            <button className="flex-1 flex items-center justify-center gap-1.5 px-2 py-3.5 bg-gray-800 hover:bg-gray-700 text-white rounded-xl font-bold border border-white/5 shadow-lg transition-transform hover:-translate-y-0.5 text-[13px] whitespace-nowrap">
+                                <Copy className="w-3.5 h-3.5 shrink-0 text-gray-400" />
                                 Use as Ref
                             </button>
                         </div>
 
-                        {/* Collapse Panel Button (Left edge of panel) */}
+                        {/* Collapse Panel Button (Flush with Left edge of panel) */}
                         <button
                             onClick={() => setIsPanelCollapsed(true)}
-                            className="absolute top-1/2 -left-3 -translate-y-1/2 flex items-center justify-center w-6 h-16 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-l-md text-gray-400 hover:text-white transition-colors z-50 outline-none focus-visible:ring-1 ring-brand-500 shadow-md pointer-events-auto"
+                            className="hidden lg:flex absolute top-1/2 -left-8 -translate-y-1/2 items-center justify-center w-8 h-[72px] bg-[#1a1c23] hover:bg-gray-700 border border-white/10 border-r-0 rounded-l-2xl text-gray-400 hover:text-white transition-all z-[60] outline-none shadow-[rgba(0,0,0,0.5)_-10px_0px_20px_-10px_inset] pointer-events-auto cursor-pointer"
                             aria-label="Collapse Inspector Panel"
                             title="Collapse Side Panel"
                         >
-                            <PanelRightClose className="w-4 h-4 ml-1" />
+                            <PanelRightClose className="w-[18px] h-[18px] ml-1 opacity-80" />
                         </button>
 
                     </div>

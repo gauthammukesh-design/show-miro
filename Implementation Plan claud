@@ -1,0 +1,435 @@
+# ShowMiro — Inspiration Gallery MVP (Final Plan)
+
+Pivot to a content-first Inspiration Gallery. Ship Admin CMS → Public Gallery → User Accounts. Remix/generation deferred.
+
+---
+
+## Locked Decisions
+
+| # | Decision | Choice |
+|---|---|---|
+| 1 | Admin bootstrapping | Manual `role='admin'` in Supabase Dashboard |
+| 2 | Gallery visibility | Public browsing (no auth). Auth for Favourite/Upload only |
+| 3 | Existing data | Drop `prompt_templates`, start fresh |
+| 4 | Item types | Single table, `format` enum (`prompt`/`image`/`template`) |
+| 5 | Image hosting | Supabase Storage (two buckets) |
+| 6 | OAuth | Deferred. Email/password only for MVP |
+| 7 | Seed content | Rich seed script, 10–15 premium items with real attribution |
+| 8 | `format='template'` | `prompt_text`/`image_url`/`ai_model` nullable in DB |
+| 9 | `external_post_date` | `timestamptz` (for relative time display) |
+| 10 | Remix flag | Deferred to future milestone |
+| 11 | Identity strategy | `profiles.id = auth.uid()` — no `get_current_profile_id()` |
+| 12 | Data integrity | DB CHECK: `prompt_text` NOT NULL when `format='prompt'` |
+
+---
+
+## Architecture
+
+```mermaid
+graph TD
+    subgraph "Public — no auth"
+        A["Gallery /gallery"] --> B["Item Detail /gallery/[id]"]
+    end
+    subgraph "Auth — user"
+        C["/login"] --> D["Profile /profile"]
+        D --> E["Favourites /profile/favourites"]
+        D --> F["My Uploads /profile/uploads"]
+        F --> G["Upload /profile/uploads/new"]
+    end
+    subgraph "Auth — admin"
+        H["Dashboard /admin"] --> I["Items /admin/items"]
+        I --> J["Create /admin/items/new"]
+        I --> K["Edit /admin/items/[id]/edit"]
+        H --> L["Taxonomy /admin/taxonomy"]
+        H --> M["Moderation /admin/moderation"]
+    end
+    B -->|"♥ Favourite"| E
+    G -->|"pending_review"| M
+    M -->|"Approve"| A
+```
+
+---
+
+## Route Map
+
+| Route | Auth | Role | Purpose |
+|---|---|---|---|
+| `/` | — | — | Redirect → `/gallery` |
+| `/gallery` | — | — | Public browse + filter + search |
+| `/gallery/[id]` | — | — | Item detail (SSR + OG meta for SEO) |
+| `/login` | — | — | Email/password sign-in / sign-up |
+| `/profile` | ✅ | user | User dashboard |
+| `/profile/favourites` | ✅ | user | Saved items grid |
+| `/profile/uploads` | ✅ | user | User's submitted items + status |
+| `/profile/uploads/new` | ✅ | user | Upload new item (→ `pending_review`) |
+| `/admin` | ✅ | admin | Stats dashboard |
+| `/admin/items` | ✅ | admin | DataTable + bulk actions |
+| `/admin/items/new` | ✅ | admin | Create item |
+| `/admin/items/[id]/edit` | ✅ | admin | Edit item |
+| `/admin/taxonomy` | ✅ | admin | Manage categories + tags |
+| `/admin/moderation` | ✅ | admin | Review pending items |
+
+---
+
+## Core Userflows
+
+### 1. Admin content population
+Admin → `/admin/items/new` → upload image → fill metadata (title, prompt, AI model, settings) → assign tags/categories → Publish → item appears on `/gallery`.
+
+### 2. Public discovery
+Anonymous → `/gallery` → filter by category/tag → search → click card → `/gallery/[id]` → premium inspector (prompt, settings, attribution).
+
+### 3. Favourite
+Heart on card → if logged-out, redirect to `/login` → return → toggle favourite → visible in `/profile/favourites`.
+
+### 4. User submission + moderation
+User → `/profile/uploads/new` → item created as `state=pending_review`, `visibility=private`, image in private bucket → admin sees in `/admin/moderation` → Approve (copy image to public bucket, set `state=published`, `visibility=public`) OR Reject (add notes) → user sees status + notes in `/profile/uploads`.
+
+---
+
+## Database Schema
+
+### State Machine (single `state` field)
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft : Admin creates
+    [*] --> pending_review : User submits
+    draft --> published : Admin publishes
+    pending_review --> published : Admin approves
+    pending_review --> rejected : Admin rejects
+    rejected --> pending_review : User resubmits
+    published --> archived : Admin archives
+    archived --> published : Admin restores
+```
+
+### Tables
+
+#### `profiles` (modify existing)
+
+> [!IMPORTANT]
+> **Identity strategy**: `profiles.id` is set to `auth.uid()` (not auto-generated). This eliminates the `get_current_profile_id()` helper and lets all RLS policies use `auth.uid()` directly for maximum query performance.
+
+```sql
+-- profiles.id = auth.uid() (set by the on_auth_user_created trigger)
+ALTER TABLE profiles ADD COLUMN role text NOT NULL DEFAULT 'user'
+  CHECK (role IN ('user', 'admin'));
+```
+
+The existing `handle_new_user()` trigger will be updated so that `profiles.id = new.id` (i.e., `auth.uid()`).
+
+#### `categories`
+| Column | Type | Constraint |
+|---|---|---|
+| `id` | uuid | PK, default `uuid_generate_v4()` |
+| `name` | text | UNIQUE NOT NULL |
+| `slug` | text | UNIQUE NOT NULL |
+| `description` | text | |
+| `sort_order` | int | default `0` |
+| `created_at` | timestamptz | default `now()` |
+
+#### `tags`
+| Column | Type | Constraint |
+|---|---|---|
+| `id` | uuid | PK |
+| `name` | text | UNIQUE NOT NULL |
+| `slug` | text | UNIQUE NOT NULL |
+| `created_at` | timestamptz | default `now()` |
+
+#### `inspiration_items`
+| Column | Type | Constraint |
+|---|---|---|
+| `id` | uuid | PK |
+| `title` | text | NOT NULL |
+| `description` | text | |
+| `format` | text | CHECK `IN ('prompt','image','template')` NOT NULL |
+| `prompt_text` | text | |
+| `negative_prompt` | text | |
+| `ai_model` | text | |
+| `ai_settings` | jsonb | |
+| `image_url` | text | |
+| `thumbnail_url` | text | |
+| `source_url` | text | Attribution link |
+| **External creator** | | |
+| `external_creator_name` | text | NOT NULL |
+| `external_creator_handle` | text | NOT NULL |
+| `external_creator_avatar_url` | text | NOT NULL |
+| `external_post_date` | timestamptz | NOT NULL |
+| **State** | | |
+| `visibility` | text | CHECK `IN ('public','private')` default `'private'` |
+| `state` | text | CHECK `IN ('draft','pending_review','published','rejected','archived')` default `'draft'` |
+| `is_featured` | boolean | default `false` |
+| **Ownership + moderation** | | |
+| `uploader_profile_id` | uuid FK → profiles.id | NOT NULL |
+| `moderated_by` | uuid FK → profiles.id | nullable |
+| `moderated_at` | timestamptz | nullable |
+| `moderation_notes` | text | nullable |
+| **Timestamps** | | |
+| `created_at` | timestamptz | default `now()` |
+| `updated_at` | timestamptz | default `now()` |
+
+**Data integrity constraint**:
+```sql
+CONSTRAINT prompt_required_for_prompt_format
+  CHECK (format != 'prompt' OR prompt_text IS NOT NULL)
+```
+→ `prompt_text` is enforced NOT NULL when `format='prompt'`. Optional for `image` and `template`.
+
+**Performance indexes**:
+```sql
+CREATE INDEX idx_items_state_visibility ON inspiration_items (state, visibility);
+CREATE INDEX idx_items_uploader ON inspiration_items (uploader_profile_id);
+```
+
+#### `item_categories` — join, PK(`item_id`, `category_id`), ON DELETE CASCADE
+#### `item_tags` — join, PK(`item_id`, `tag_id`), ON DELETE CASCADE
+
+#### `favorites`
+| Column | Type | Constraint |
+|---|---|---|
+| `id` | uuid | PK |
+| `profile_id` | uuid FK → profiles.id | NOT NULL |
+| `item_id` | uuid FK → inspiration_items.id | NOT NULL, ON DELETE CASCADE |
+| `created_at` | timestamptz | default `now()` |
+| | | UNIQUE(`profile_id`, `item_id`) |
+
+#### `admin_action_log`
+| Column | Type | Constraint |
+|---|---|---|
+| `id` | uuid | PK |
+| `actor_profile_id` | uuid FK → profiles.id | NOT NULL |
+| `action` | text | NOT NULL (`create`/`update`/`publish`/`reject`/`delete`/`bulk_update`) |
+| `target_item_id` | uuid | nullable |
+| `details` | jsonb | |
+| `created_at` | timestamptz | default `now()` |
+
+#### `delete_requests`
+| Column | Type | Constraint |
+|---|---|---|
+| `id` | uuid | PK |
+| `item_id` | uuid FK → inspiration_items.id | NOT NULL |
+| `requester_profile_id` | uuid FK → profiles.id | NOT NULL |
+| `reason` | text | nullable |
+| `status` | text | default `'open'` CHECK `IN ('open','closed')` |
+| `created_at` | timestamptz | default `now()` |
+| `resolved_by` | uuid FK → profiles.id | nullable |
+| `resolved_at` | timestamptz | nullable |
+
+### Helper Function
+```sql
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+$$;
+```
+> [!NOTE]
+> Since `profiles.id = auth.uid()`, this function uses `id = auth.uid()` directly (PK lookup = fastest possible).
+
+---
+
+## RLS Policies
+
+> [!IMPORTANT]
+> **Identity standard**: All policies use `auth.uid()` directly — no `get_current_profile_id()`. Since `profiles.id = auth.uid()`, FKs like `uploader_profile_id` and `profile_id` can be compared to `auth.uid()` directly.
+
+### `inspiration_items`
+
+| Op | Policy Type | Rule |
+|---|---|---|
+| **SELECT** | `USING` | `(state='published' AND visibility='public')` OR `uploader_profile_id = auth.uid()` OR `is_admin()` |
+| **INSERT** (user) | `WITH CHECK` | `uploader_profile_id = auth.uid() AND state = 'pending_review' AND visibility = 'private'` |
+| **INSERT** (admin) | `WITH CHECK` | `is_admin()` (no state/visibility restriction) |
+| **UPDATE** (user) | `USING` | `uploader_profile_id = auth.uid() AND state IN ('draft','pending_review')` |
+| **UPDATE** (user) | `WITH CHECK` | `state IN ('draft','pending_review') AND visibility = 'private'` |
+| **UPDATE** (admin) | `USING` + `WITH CHECK` | `is_admin()` |
+| **DELETE** | `USING` | `is_admin()` only |
+
+### `categories`, `tags`, `item_categories`, `item_tags`
+| Op | Rule |
+|---|---|
+| SELECT | Public (anyone, including anon) |
+| INSERT / UPDATE / DELETE | `is_admin()` |
+
+### `favorites`
+| Op | Rule |
+|---|---|
+| SELECT / INSERT / DELETE | `profile_id = auth.uid()` |
+
+### `admin_action_log`
+| Op | Rule |
+|---|---|
+| SELECT / INSERT | `is_admin()` |
+
+### `delete_requests`
+| Op | Rule |
+|---|---|
+| SELECT | `requester_profile_id = auth.uid()` OR `is_admin()` |
+| INSERT | `WITH CHECK`: `requester_profile_id = auth.uid()` |
+| UPDATE | `is_admin()` |
+
+---
+
+## Storage
+
+| Bucket | Read | Write | Delete | Purpose |
+|---|---|---|---|---|
+| `inspiration-public` | Anyone | Admins only | Admins only | Published gallery images |
+| `inspiration-private` | Owner + Admin | Auth users (own folder) | Owner + Admin | Pending review uploads |
+
+- **Path convention**: `{auth.uid()}/{uuid}.{ext}`
+- **Accepted types**: `image/jpeg`, `image/png`, `image/webp`, `image/gif`
+- **Max file size**: 10 MB
+- **On approval**: Admin copies file from `inspiration-private` → `inspiration-public`, updates `image_url`
+
+**Storage RLS scoping** (enforced in Supabase Storage policies):
+```sql
+-- inspiration-private: users can only interact with their own folder
+-- INSERT
+bucket_id = 'inspiration-private'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+-- SELECT
+bucket_id = 'inspiration-private'
+  AND ((storage.foldername(name))[1] = auth.uid()::text OR is_admin())
+-- DELETE
+bucket_id = 'inspiration-private'
+  AND ((storage.foldername(name))[1] = auth.uid()::text OR is_admin())
+
+-- inspiration-public: admin-only write/delete, public read
+-- SELECT: true (public)
+-- INSERT/DELETE: is_admin()
+```
+
+---
+
+## Proposed File Changes
+
+### Phase 1 — DB & Storage Foundation
+
+| Action | File |
+|---|---|
+| [NEW] | [001_gallery_schema.sql](file:///Users/gautam/Downloads/Antigravity/ShowMiro/supabase/migrations/001_gallery_schema.sql) — all tables, constraints, `is_admin()`, all RLS policies |
+| [NEW] | [002_seed_taxonomy.sql](file:///Users/gautam/Downloads/Antigravity/ShowMiro/supabase/migrations/002_seed_taxonomy.sql) — initial categories + tags |
+| [NEW] | [seed_gallery.mjs](file:///Users/gautam/Downloads/Antigravity/ShowMiro/seed_gallery.mjs) — 10–15 premium items with external creator attribution |
+| [NEW] | [admin.ts](file:///Users/gautam/Downloads/Antigravity/ShowMiro/src/utils/supabase/admin.ts) — centralized service-role client |
+| [MODIFY] | [server.ts](file:///Users/gautam/Downloads/Antigravity/ShowMiro/src/utils/supabase/server.ts) — add `createServiceClient()` export |
+
+---
+
+### Phase 2 — Admin Panel
+
+| Action | File | Purpose |
+|---|---|---|
+| [NEW] | `src/app/admin/layout.tsx` | Admin layout + sidebar + auth guard |
+| [NEW] | `src/app/admin/page.tsx` | Dashboard (stats: total, published, pending) |
+| [NEW] | `src/app/admin/items/page.tsx` | DataTable + search + filter + bulk actions |
+| [NEW] | `src/app/admin/items/new/page.tsx` | Create form (image upload, metadata, taxonomy) |
+| [NEW] | `src/app/admin/items/[id]/edit/page.tsx` | Edit form + delete with confirmation |
+| [NEW] | `src/app/admin/taxonomy/page.tsx` | Categories + tags CRUD |
+| [NEW] | `src/app/admin/moderation/page.tsx` | Pending queue (approve/reject + notes) |
+| [NEW] | `src/app/admin/actions.ts` | All admin Server Actions |
+| [NEW] | `src/components/admin/AdminSidebar.tsx` | Admin nav |
+| [NEW] | `src/components/admin/ItemForm.tsx` | Reusable create/edit form |
+| [NEW] | `src/components/admin/DataTable.tsx` | Sortable, filterable table + bulk select |
+| [NEW] | `src/components/admin/ImageUploader.tsx` | Drag-and-drop + preview + progress |
+| [NEW] | `src/components/admin/TagInput.tsx` | Multi-select tag picker + create-on-fly |
+| [NEW] | `src/components/admin/ConfirmDialog.tsx` | Accessible destructive action modal |
+
+---
+
+### Phase 3 — Public Gallery
+
+| Action | File | Purpose |
+|---|---|---|
+| [MODIFY] | `src/app/page.tsx` | Redirect `/` → `/gallery` |
+| [NEW] | `src/app/gallery/layout.tsx` | Public layout (top nav, no sidebar on mobile) |
+| [NEW] | `src/app/gallery/page.tsx` | Masonry grid, filter, search, infinite scroll |
+| [NEW] | `src/app/gallery/[id]/page.tsx` | SSR detail page + OG meta |
+| [NEW] | `src/components/gallery/GalleryCard.tsx` | Refactored card with real data + Supabase images |
+| [NEW] | `src/components/gallery/GalleryGrid.tsx` | Masonry layout with responsive columns |
+| [NEW] | `src/components/gallery/FilterBar.tsx` | Categories, tags, search, sort |
+| [NEW] | `src/components/gallery/InspectorPanel.tsx` | Refactored from `FullScreenPromptInspector` |
+| [DELETE] | `src/components/PromptGallery.tsx` | Replaced by gallery components |
+| [DELETE] | `src/components/PromptCard.tsx` | Replaced by `GalleryCard` |
+| [DELETE] | `src/components/PromptDetailModal.tsx` | Replaced by `InspectorPanel` |
+| [DELETE] | `src/components/FullScreenPromptInspector.tsx` | Replaced by `InspectorPanel` |
+| [DELETE] | `src/app/library/` | Replaced by `/gallery` |
+
+---
+
+### Phase 4 — User Features
+
+| Action | File | Purpose |
+|---|---|---|
+| [NEW] | `src/app/profile/page.tsx` | User dashboard |
+| [NEW] | `src/app/profile/favourites/page.tsx` | Favourited items grid |
+| [NEW] | `src/app/profile/uploads/page.tsx` | User's items + status badges |
+| [NEW] | `src/app/profile/uploads/new/page.tsx` | Upload form (→ `pending_review`) |
+| [NEW] | `src/app/profile/actions.ts` | `toggleFavourite`, `submitItem`, `requestDelete` |
+| [MODIFY] | `src/components/Sidebar.tsx` | Add profile/favourites links, admin link if role=admin |
+| [MODIFY] | `src/middleware.ts` | Protect `/admin/*` (admin), `/profile/*` (auth), allow `/gallery/*` |
+
+---
+
+## Security
+
+| Concern | Mitigation |
+|---|---|
+| Privilege escalation | `is_admin()` in RLS + middleware + Server Actions |
+| User uploads | Scoped to `profile_id/` folder; type + size validated server-side |
+| Service role key | Server Actions only; never in client bundle |
+| Delete published items | Users submit `delete_requests`; only admins can physically delete |
+| Audit trail | All admin mutations logged to `admin_action_log` |
+| XSS | React auto-escaping; no `dangerouslySetInnerHTML` |
+| CSRF | Next.js Server Actions use POST + origin check |
+
+## Accessibility
+
+- `:focus-visible` rings on all interactive elements
+- ARIA labels on icon-only buttons
+- Heading hierarchy (`h1` → `h2` → `h3`)
+- Colour contrast ≥ 4.5:1 (WCAG AA)
+- `prefers-reduced-motion` wraps animations
+- Focus trap in modals/dialogs
+- Keyboard-navigable gallery grid
+- Alt text on all images
+- Skip-to-content link
+- `aria-live` for form errors and toasts
+
+---
+
+## Milestones
+
+| # | Milestone | Exit Criteria |
+|---|---|---|
+| **M1** | DB + Storage Foundation | Migration applied. `profiles.id = auth.uid()` identity confirmed. B-Tree indexes on `(state, visibility)` and `(uploader_profile_id)` created. `prompt_text` CHECK constraint enforced for `format='prompt'`. Strict `WITH CHECK` RLS on INSERT/UPDATE verified. Storage scoping (`auth.uid()/` folder) verified. Both buckets created. Seed script run (10–15 items). **Full RLS summary provided. Admin UI does NOT start until M1 is stable.** |
+| **M2** | Admin Panel | Admin can create/edit/delete/bulk-manage items, upload images, manage taxonomy, actions logged to `admin_action_log` |
+| **M3** | Public Gallery | Published items render on `/gallery`, filter/search/sort work, responsive across breakpoints, SSR detail page with OG meta |
+| **M4** | User Features | Sign up, favourite toggle, user upload → pending → admin approve/reject → visible. Delete request workflow. |
+| **M5** | Polish & Ship | Animations (motion-safe), a11y sweep, performance check, walkthrough recorded |
+
+---
+
+## Verification Plan
+
+### Agent-testable (Browser Subagent)
+1. Admin CRUD: create item → verify in list → edit → verify changes
+2. Publish flow: publish item → verify on `/gallery`
+3. Taxonomy: create category/tag → verify in filter bar
+4. Moderation: user submit → admin approve → appears on gallery
+5. Favourites: heart → verify in `/profile/favourites`
+6. Responsive: resize to mobile/tablet/desktop, screenshot each
+
+### RLS Script
+Node.js script testing anon/auth/admin against every table — confirm no unauthorized reads or writes.
+
+### Manual QA
+- Mobile tap targets ≥ 44px, no horizontal overflow
+- Keyboard nav through entire gallery + modals
+- ESC closes all modals
+- `prefers-reduced-motion` disables animations

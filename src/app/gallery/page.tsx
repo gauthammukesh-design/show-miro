@@ -5,12 +5,9 @@ import PromptGallery from '@/components/PromptGallery';
 export default async function InspirationGallery() {
     const supabase = await createServerClient();
 
-    // Protect the route
+    // Protect the route - Removed for public gallery
+    // We only fetch the user to pass down for UI state if needed, but not redirecting
     const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-        return redirect('/login');
-    }
 
     // Fetch Public Prompts seamlessly avoiding the current RLS infinite recursion by using the Service Role
     const serviceSupabase = createServiceClient(
@@ -19,9 +16,10 @@ export default async function InspirationGallery() {
     );
 
     const { data: prompts } = await serviceSupabase
-        .from('prompt_templates')
+        .from('inspiration_items')
         .select('*')
-        .eq('is_public', true)
+        .eq('state', 'published')
+        .eq('visibility', 'public')
         .order('created_at', { ascending: false });
 
     return (
